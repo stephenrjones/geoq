@@ -44,6 +44,8 @@ leaflet_layer_control.initDrawer = function(){
     leaflet_layer_control.addLayerComparison($accordion);
     leaflet_layer_control.addGeoOverview($accordion);
     leaflet_layer_control.addRotationHelper($accordion);
+    leaflet_layer_control.addMAGE($accordion);
+
 
 
     //The Layer Controls should also be built and added later in another script, something like:
@@ -124,6 +126,76 @@ leaflet_layer_control.addRotationHelper = function($accordion) {
     $("#spinnerResetButton").click(function(evt) { leaflet_layer_control.rotateMap(0); $("#roseSpinnerInput").val(0); });
 
 };
+
+leaflet_layer_control._mageLayer = null;
+leaflet_layer_control.addMAGE = function ($accordion) {
+  if(leaflet_layer_control._mageLayer == null) 
+	leaflet_layer_control._mageLayer = aoi_feature_edit.map
+  var mh = leaflet_layer_control.buildAccordionPanel($accordion, "MAGE");
+  var mhHTML = '<div id="mageLogin">' +
+		  'username:<br />&nbsp;<input type="text" id="mageUser" /> <br />' +
+//		  'uid:<br />&nbsp;<input type="text" /> <br />' +
+		  'password:<br />&nbsp;<input type="password"  id="magePass" /> <br />' +
+		  'URL:<br />&nbsp;<input type="text"  id="mageURL" /> <br />' +
+		  '<button id="mageLoginButton">Login</button>' +
+		  '</div>' +
+		  '<div id="mageStatus"></div>' +
+		  '<div id="mageDetails" class="hide">' +
+		  '    Event: <select id="mageEventSelect">' +
+		  '    <option value="none">None</option>' +
+		  '    </select>' +
+		  '    <div id="mageSummary">' +
+		  '        Observations: <span id="mageObservationCount">0</span>' +
+		  '    </div>Active Only: <input id="mageOnlyActive" type="checkbox" checked=true disabled=true />'+
+		  '</div>';
+  var mhdom = $(mhHTML);
+  var squawkee = function(msg) {
+	if(msg.loggingIn) $("#mageStatus").html("Logging in...");
+	else if(msg.loggedIn) {
+	  $("#mageLogin").toggleClass("hide");
+	  $("#mageDetails").toggleClass("hide");
+	}
+	else if(msg.failed)  $("#mageStatus").html(msg.details);
+	else if(msg.events_loading)  $("#mageStatus").html("Loading events...");
+	else if(msg.events_loaded) {
+	  $("#mageStatus").html("");
+	  var evts = magehelper.getEvents();
+	  var ms = $("#mageEventSelect");
+	  ms.find("option:gt(0)").remove();
+	  var tmp = ms.html();
+	  for(var i=0; i<evts.length; i++) {
+		tmp += "<option value='" + evts[i].id + "'>" + evts[i].name + "</option>";
+	  }
+	  ms.html(tmp);
+	}
+	else if(msg.observations_loading) $("#mageStatus").html("Loading observations...");
+	else if(msg.observations_loaded) {
+	  $("#mageStatus").html("");
+	  $("#mageObservationCount").html(msg.observations_count);
+	  var fc = {
+		"type": "FeatureCollection", 
+		"features": magehelper.getObservations()
+	  }
+	  leaflet_layer_control._mageLayer = L.geoJson(fc);
+	  leaflet_layer_control._mageLayer.addTo(aoi_feature_edit.map);
+	}
+  };
+  magehelper.squawk(squawkee);
+  mhdom.appendTo(mh);
+  $("#mageEventSelect").on("change", function() {
+	magehelper.loadObservations(this.value);
+  });
+  $("#mageLoginButton").click(function(evt) {
+	  var username = $( "#mageUser" ).val();
+	  var uid = "12345";
+	  var endpoint = $("#mageURL").val();
+	  var pass = $( "#magePass" ).val();
+	  magehelper.login(endpoint, username, uid, pass);
+  });
+  
+};
+
+
 leaflet_layer_control.addGeoOverview = function($accordion) {
     var go = leaflet_layer_control.buildAccordionPanel($accordion,"Geo Overview");
     var ghtml = "<div id='goMap'></div><div id='goMapStatus' "
