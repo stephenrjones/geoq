@@ -4,8 +4,10 @@ var magehelper = (function () {
   var url = null;
   var events = [];
   var observations = [];
+  var observationTypes = [];
   var ducklings = [];
   var activeOnly = true;
+  var current_event = "none";
 
   function getTokenForURL() {
 	return "?access_token=" + token;
@@ -22,12 +24,16 @@ var magehelper = (function () {
 
   // Return an object exposed to the public
   return {
-	getIconURL: function (observation) {
-	  if(observation.properties && observation.properties.type) {
-		
-		return url + "/events/" + observation.eventId + "/form/icons/"
-		  + encodeURIComponent(observation.properties.type) 
-		  + getTokenForURL();
+	getIconURL: function (eid, obsType) {
+	  if (eid === null || obsType == null)
+		return null;
+	  return url + "/events/" + eid + "/form/icons/"
+			  + encodeURIComponent(obsType)
+			  + getTokenForURL();
+	},
+	getIconURLFromObservation: function (observation) {
+	  if (observation.properties && observation.properties.type) {
+		return magehelper.getIconURL(observation.eventId, observation.properties.type);
 	  }
 	},
 	squawk: function (callback) {
@@ -48,7 +54,6 @@ var magehelper = (function () {
 
 		} else
 		  loudly({failed: true, details: "Sorry, couldn't log you in."});
-		console.debug("data", data, "textStatus", textStatus, "jqXHR", jqXHR);
 	  }).fail(function () {
 		loudly({failed: true, details: "Sorry, couldn't log you in."});
 	  });
@@ -64,8 +69,6 @@ var magehelper = (function () {
 		  loudly({events_loaded: true});
 		} else
 		  loudly({failed: true, details: "Sorry, couldn't list events."});
-		console.debug("hm, no data for events?");
-		console.debug("data", data, "textStatus", textStatus, "jqXHR", jqXHR);
 	  });
 
 	},
@@ -73,28 +76,33 @@ var magehelper = (function () {
 	  if (!magehelper.isReady())
 		return;
 	  loudly({observations_loading: true});
-	  if(eid == "none") {
+	  current_event = eid;
+	  if (eid == "none") {
 		observations = [];
 		loudly({observations_loaded: true, observations_count: 0});
 		return;
 	  }
 	  $.get(url + "/events/" + eid + "/observations", {access_token: token},
 	  function (data, textStatus, jqXHR) {
+		observationTypes = [];
 		if (data) {
-		  if(activeOnly) {
+		  if (activeOnly) {
 			var trimmed = [];
-			for(var i=0; i<data.length; i++) {
+			for (var i = 0; i < data.length; i++) {
 			  var o = data[i];
-			  if(o.state && o.state.name && o.state.name == "active") 
+			  if (o.state && o.state.name && o.state.name === "active") {
 				trimmed[trimmed.length] = o;
+				if (o.properties && o.properties.type)
+				  if (observationTypes.indexOf(o.properties.type) === -1)
+					observationTypes[observationTypes.length] = o.properties.type;
+			  }
 			}
 			observations = trimmed;
-		  } else observations = data;
-		loudly({observations_loaded: true, observations_count: observations.length});
+		  } else
+			observations = data;
+		  loudly({observations_loaded: true, observations_count: observations.length});
 		} else
 		  loudly({failed: true, details: "Sorry, couldn't load observations."});
-		console.debug("hm, no data for observations?");
-		console.debug("data", data, "textStatus", textStatus, "jqXHR", jqXHR);
 	  });
 
 	},
@@ -110,9 +118,24 @@ var magehelper = (function () {
 	getEvents: function () {
 	  return events;
 	},
-	isActiveOnly: function() { return activeOnly; },
-	setActiveOnly: function(arg) { if(arg) activeOnly = true; else activeOnly = false; },
-	getObservations: function () { return observations; },
+	isActiveOnly: function () {
+	  return activeOnly;
+	},
+	setActiveOnly: function (arg) {
+	  if (arg)
+		activeOnly = true;
+	  else
+		activeOnly = false;
+	},
+	getObservations: function () {
+	  return observations;
+	},
+	getObservationTypes: function () {
+	  return observationTypes;
+	},
+	getCurrentEvent: function() {
+	  return current_event;
+	}
 	// Public alias to a private function
   };
 })();

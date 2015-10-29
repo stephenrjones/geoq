@@ -146,6 +146,10 @@ leaflet_layer_control.addMAGE = function ($accordion) {
 		  '    </select>' +
 		  '    <div id="mageSummary">' +
 		  '        Observations: <span id="mageObservationCount">0</span>' +
+		  '    </div><div>View: '+
+		  '    <select id="mageTypeSelect" disabled=true>' +
+		  '    <option value="all" select=true>All</option>' +
+		  '    </select></div>' +
 		  '    </div>Active Only: <input id="mageOnlyActive" type="checkbox" checked=true disabled=true />'+
 		  '</div>';
   var mhdom = $(mhHTML);
@@ -160,6 +164,7 @@ leaflet_layer_control.addMAGE = function ($accordion) {
 	else if(msg.events_loaded) {
 	  $("#mageStatus").html("");
 	  var evts = magehelper.getEvents();
+
 	  var ms = $("#mageEventSelect");
 	  ms.find("option:gt(0)").remove();
 	  var tmp = ms.html();
@@ -167,16 +172,64 @@ leaflet_layer_control.addMAGE = function ($accordion) {
 		tmp += "<option value='" + evts[i].id + "'>" + evts[i].name + "</option>";
 	  }
 	  ms.html(tmp);
+	  
+//	  var mes = $("#mageTypeSelect");
+//	  tmp = "";
+//	  mes.find("option:gt(0)").remove();
+//	  var ots = magehelper.getObservationTypes();
+//	  for(var i=0; i<ots.length; i++) {
+//		tmp += "<option>" + ots[i] + "</option>";
+//	  }
+//	  mes.html(tmp);
+	  
 	}
-	else if(msg.observations_loading) $("#mageStatus").html("Loading observations...");
-	else if(msg.observations_loaded) {
+	else if(msg.observations_loading) {
+	  $("#mageStatus").html("Loading observations...");
+	  aoi_feature_edit.map.removeLayer(leaflet_layer_control._mageLayer);
+	  leaflet_layer_control._mageLayer = null;
+	} else if(msg.observations_loaded) {
+	  if(leaflet_layer_control._mageLayer !== null) {
+		aoi_feature_edit.map.removeLayer(leaflet_layer_control._mageLayer);
+		leaflet_layer_control._mageLayer = null;
+	  }
 	  $("#mageStatus").html("");
 	  $("#mageObservationCount").html(msg.observations_count);
 	  var fc = {
 		"type": "FeatureCollection", 
 		"features": magehelper.getObservations()
 	  }
-	  leaflet_layer_control._mageLayer = L.geoJson(fc);
+	  
+	  var icons = {};
+	  
+	  leaflet_layer_control._mageLayer = L.geoJson(fc, {
+		onEachFeature: function(feature, layer) {
+		  window.lastfl = [feature, layer];
+		  if (feature.properties) {
+			var props = feature.properties;
+			
+			var html = "";
+			if (props.type) {
+			  var t = props.type;
+			  var iurl = magehelper.getIconURL(
+					  magehelper.getCurrentEvent(), t);
+			  var obIcon = L.icon({
+				iconUrl: iurl,
+				iconSize: [72/2, 92/2],
+			  });
+			  layer.setIcon(obIcon);
+			  
+			  html += "Type: " + t + "<br />";
+			 
+			}
+			for (p in props) {
+			  if ("type" == p || props[p] == "")
+				continue;
+			  html += p + ": " + props[p] + "<br />";
+			}
+			layer.bindPopup(html);
+		  }
+		}
+	  });
 	  leaflet_layer_control._mageLayer.addTo(aoi_feature_edit.map);
 	}
   };
