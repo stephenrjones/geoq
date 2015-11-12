@@ -20,7 +20,7 @@ from geoq.training.models import Training
 from geoq.core.utils import clean_dumps
 
 TRUE_FALSE = [(0, 'False'), (1, 'True')]
-STATUS_VALUES_LIST = ['Unassigned', 'Assigned', 'In work', 'Awaiting review', 'In review', 'Completed']
+STATUS_VALUES_LIST = ['Unassigned', 'Assigned', 'Awaiting Imagery', 'Awaiting Analysis', 'In work', 'Completed']
 
 
 class AssigneeType:
@@ -273,7 +273,7 @@ class Job(GeoQBase, Assignment):
         """
         Returns the AOIs currently being worked on or in review
         """
-        return self.aois.filter(Q(status='In work') | Q(status='Awaiting review') | Q(status='In review'))
+        return self.aois.filter(Q(status='In work') | Q(status='Awaiting Imagery') | Q(status='Awaiting Analysis'))
 
     def in_work_count(self):
         return self.in_work().count()
@@ -350,7 +350,10 @@ class AOI(GeoQBase, Assignment):
     objects = AOIManager()
     polygon = models.MultiPolygonField()
     priority = models.SmallIntegerField(choices=PRIORITIES, max_length=1, default=5)
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='Unassigned')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Unassigned')
+
+    started_at = models.DateTimeField(blank=True,null=True)
+    finished_at = models.DateTimeField(blank=True,null=True)
 
     class Meta:
         permissions = (
