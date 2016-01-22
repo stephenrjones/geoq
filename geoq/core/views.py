@@ -9,6 +9,7 @@ import requests
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User, Group, Permission
 from django.contrib.gis.geos import GEOSGeometry
+from django.contrib.contenttypes.models import ContentType
 from django.core.urlresolvers import reverse, reverse_lazy
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
@@ -16,8 +17,8 @@ from django.forms.util import ValidationError
 from django.http import Http404, HttpResponse, HttpResponseRedirect, HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import DetailView, ListView, TemplateView, View, DeleteView, CreateView, UpdateView
-from django.views.decorators.http import require_POST
-from datetime import datetime
+from django.views.decorators.http import require_POST, require_http_methods
+from django import utils
 import distutils
 
 from models import Project, Job, AOI, Comment, AssigneeType, Organization, WorkcellImage
@@ -32,6 +33,7 @@ from geoq.mgrs.exceptions import ProgramException
 from guardian.decorators import permission_required
 from kml_view import *
 from shape_view import *
+from analytics import UserGroupStats
 
 
 class Dashboard(TemplateView):
@@ -255,7 +257,7 @@ class CreateFeaturesView(UserAllowedMixin, DetailView):
             if self.request.user in aoi.job.reviewers.all() or is_admin:
                 aoi.status = 'In work'
                 if aoi.started_at is None:
-                    aoi.started_at = datetime.now()
+                    aoi.started_at = utils.timezone.now()
                 aoi.reviewers.add(self.request.user)
                 aoi.save()
                 increment_metric('workcell_analyzed')
@@ -345,7 +347,7 @@ class JobDetailedListView(ListView):
     A mixture between a list view and detailed view.
     """
 
-    paginate_by = 15
+    paginate_by = 1000
     model = Job
     default_status = 'assigned'
     request = None
@@ -540,7 +542,7 @@ class ChangeAOIStatus(View):
 
         # if completed, mark completion date/time
         if status == 'Completed':
-            aoi.finished_at = datetime.now()
+            aoi.finished_at = utils.timezone.now()
 
         aoi.save()
         return aoi
@@ -671,6 +673,38 @@ class SummaryView(TemplateView):
         cv = super(SummaryView, self).get_context_data(**kwargs)
         cv['object'] = get_object_or_404(Job, pk=self.kwargs.get('job_pk'))
         cv['workcells'] = AOI.objects.filter(job_id=self.kwargs.get('job_pk')).order_by('id')
+        return cv
+
+class WorkSummaryView(TemplateView):
+    http_method_names = ['get']
+    template_name = 'core/reports/work_summary.html'
+    model = Job
+
+    # we'll use these ContentTypes for filtering
+    ct_user = ContentType.objects.get(app_label="auth",model="user")
+    ct_group = ContentType.objects.get(app_label="auth",model="group")
+
+    def get_context_data(self, **kwargs):
+        cv = super(WorkSummaryView, self).get_context_data(**kwargs)
+
+        # get users and groups assigned to the Job
+        job = get_object_or_404(Job, pk=self.kwargs.get('job_pk'))
+        job_team_data = dict([(g,UserGroupStats(g)) for g in job.teams.all()])
+        job_analyst_data = dict([(u,UserGroupStats(u)) for u in job.analysts.all()])
+        job_team_data.update(job_analyst_data)
+
+        for uorg in job_team_data:
+            ct = self.ct_group if self.ct_group.model_class() is type(uorg) else self.ct_user
+            their_aois = job.aois.filter(assignee_id=uorg.id, assignee_type = ct)
+            for aoi in their_aois:
+                print "%s %s %s" % (uorg, aoi.analyst, aoi.status)
+                job_team_data[uorg].increment(aoi.analyst, aoi.status)
+
+        cv['object'] = job
+        cv['data'] = []
+        for key,value in job_team_data.iteritems():
+            cv['data'].append(value.toJSON())
+
         return cv
 
 
@@ -893,7 +927,7 @@ def update_feature_data(request, *args, **kwargs):
                 properties_main_links = []
             link_info = {}
             link_info['properties'] = json.loads(value)
-            link_info['created_at'] = str(datetime.now())
+            link_info['created_at'] = str(utils.timezone.now())
             link_info['user'] = str(request.user)
             properties_main_links.append(link_info)
             properties_main['linked_items'] = properties_main_links
@@ -990,6 +1024,23 @@ def create_workcell_image(request, id, **kwargs):
         message = 'updated'
 
     return HttpResponse(json.dumps({message: message}), mimetype="application/json", status=200)
+
+@login_required
+@require_http_methods(["POST"])
+def workcell_image_examined(request, id, **kwargs):
+    import pdb; pdb.set_trace()
+    finish_image = True if request.POST['value'] == 'true' else False
+
+    wcell_image = get_object_or_404(WorkcellImage, id=id)
+
+    if finish_image:
+        wcell_image.exam_date = utils.timezone.now()
+    else:
+        wcell_image.exam_date = None
+
+    wcell_image.save()
+
+    return HttpResponse()
 
 
 class LogJSON(ListView):
