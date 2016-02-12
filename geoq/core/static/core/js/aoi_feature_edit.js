@@ -36,6 +36,7 @@ aoi_feature_edit.init = function () {
     aoi_feature_edit.featureLayers = [];
     aoi_feature_edit.icons = {};
     aoi_feature_edit.icon_style = {};
+    aoi_feature_edit.hidden_tools = site_settings.hidden_tools ? site_settings.hidden_tools[aoi_feature_edit.status] : [];
 
     leaflet_helper.init();
 
@@ -361,6 +362,8 @@ aoi_feature_edit.colorIconFromStyle = function ($icon,style_obj){
 
 aoi_feature_edit.featureLayer_onEachFeature = function (feature, layer, featureLayer, dontAddDelete) {
     if (feature.properties) {
+
+
         var id = feature.properties.id;
         feature_manager.addAtId(id,{layerGroup: featureLayer, layer: layer});
 
@@ -398,13 +401,80 @@ aoi_feature_edit.featureLayer_onEachFeature = function (feature, layer, featureL
             popupContent += aoi_feature_edit.addFeatureTable(feature, template);
         }
 
+        if (feature.properties.metadata) {
+            popupContent += aoi_feature_edit.create_metadata_popup_content(id, feature.properties.metadata)
+        }
+
         if (id && !dontAddDelete) {
             popupContent += '<br/><a onclick="aoi_feature_edit.deleteFeature(\'' + id + '\', \'' + leaflet_helper.home_url + 'features/delete/' + id + '\');">Delete Feature</a>';
             popupContent += leaflet_helper.addLinksToPopup(featureLayer.name, id, false, false, true);
         }
 
         layer.bindPopup(popupContent);
+
         feature.layer = layer;
+    }
+};
+
+aoi_feature_edit.create_metadata_popup_content = function(id, metadata) {
+    function create_threshold_popup_string(defval) {
+        var highselect = (defval === 'high') ? "selected" : "";
+        var lowselect = (defval === 'low') ? "selected" : "";
+
+        var pstring = '<br/><b>Threshold:</b><select name="threshold" style="width: 100px; margin-left: 5px;">';
+        pstring += '<option value="none">---</option>';
+        pstring += '<option value="high" ' + highselect + '>high</option>';
+        pstring += '<option value="low" ' + lowselect + '>low</option>';
+        pstring += '</select>';
+
+        return pstring;
+    };
+
+    var threshold = metadata["threshold"] || "none";
+    var content = "";
+
+    content += '<br/><br/><div id="metadata-' + id + '" ><b>Name:</b><input style="width: 120px; margin-left: 5px;" name="name" type="text" value="' + metadata.name + '"/>';
+    content += create_threshold_popup_string(threshold);
+    content += '<br/><button type="button" onclick="aoi_feature_edit.update_metadata(' + id + ');">Update</button></div>';
+
+    return content;
+};
+
+aoi_feature_edit.update_metadata = function(id) {
+    var data = {};
+    $('#metadata-'+id).find(':input').each(function() {
+        // data.push($(this).val());
+        if ($(this).attr('name')) {
+            data[$(this).attr('name')] = $(this).val();
+        }
+    });
+    if (data.name && data.threshold) {
+        $.ajax({
+            url: "/maps/api/features/update-metadata/" + id,
+            data: data,
+            type: 'POST',
+            success: function (ret) {
+                log.info('Updated feature ' + id);
+                // find the open popup and update contents with new info
+                $.each(aoi_feature_edit.map._layers, function(ml) {
+                    if (aoi_feature_edit.map._layers[ml].feature) {
+                        if (aoi_feature_edit.map._layers[ml]._popup && aoi_feature_edit.map._layers[ml]._popup._isOpen) {
+                            var oldContent = aoi_feature_edit.map._layers[ml]._popup.getContent();
+                            var newMetaContent = aoi_feature_edit.create_metadata_popup_content(id, data);
+                            var start = oldContent.substring(0, oldContent.indexOf("<div"));
+                            var end = oldContent.substring(oldContent.indexOf("</div>")+6);
+                            aoi_feature_edit.map._layers[ml]._popup.setContent(start + newMetaContent + end);
+                            aoi_feature_edit.map._layers[ml]._popup.update();
+                        }
+                    }
+                })
+                aoi_feature_edit.map.closePopup();
+            },
+            failure: function () {
+                log.error('Failed to delete feature ' + id);
+                aoi_feature_edit.map.closePopup();
+            }
+        })
     }
 };
 aoi_feature_edit.fulcrumfeatureLayer_onEachFeature = function (feature, layer, featureLayer, dontAddDelete) {
@@ -745,10 +815,18 @@ aoi_feature_edit.map_init = function (map, bounds) {
     aoi_feature_edit.layers.features = aoi_feature_edit.featureLayers;
 
     //Add other controls
-    leaflet_helper.addLocatorControl(map);
-    aoi_feature_edit.buildDrawingControl(aoi_feature_edit.drawnItems);
-    leaflet_helper.addGeocoderControl(map);
-    feature_manager.addStatusControl(map);
+    if ($.inArray("Locator",aoi_feature_edit.hidden_tools) == -1) {
+        leaflet_helper.addLocatorControl(map);
+    }
+    if ($.inArray("Drawing",aoi_feature_edit.hidden_tools) == -1) {
+        aoi_feature_edit.buildDrawingControl(aoi_feature_edit.drawnItems);
+    }
+    if ($.inArray("Geocoder",aoi_feature_edit.hidden_tools) == -1) {
+        leaflet_helper.addGeocoderControl(map);
+    }
+    if ($.inArray("Status",aoi_feature_edit.hidden_tools) == -1) {
+        feature_manager.addStatusControl(map);
+    }
 
     //Build the filter drawer (currently on left, TODO: move to bottom)
     leaflet_filter_bar.init();
@@ -778,15 +856,17 @@ aoi_feature_edit.map_init = function (map, bounds) {
 
     help_control.addTo(map, {'position':'topleft'});
 
-    var location_control = new L.Control.Button({
-        'iconUrl': aoi_feature_edit.static_root + 'images/bullseye.png',
-        'onClick': draw_and_center_location,
-        'hideText': true,
-        'doToggle': false,
-        'toggleStatus': false
-    });
+    if ($.inArray("Location",aoi_feature_edit.hidden_tools) == -1) {
+        var location_control = new L.Control.Button({
+            'iconUrl': aoi_feature_edit.static_root + 'images/bullseye.png',
+            'onClick': draw_and_center_location,
+            'hideText': true,
+            'doToggle': false,
+            'toggleStatus': false
+        });
 
-    location_control.addTo(map, {'position': 'topleft'});
+        location_control.addTo(map, {'position': 'topleft'});
+    }
 
     function pruneTemp(jqXHR) {
         var tmpId = jqXHR.getResponseHeader("Temp-Point-Id");
@@ -1050,7 +1130,9 @@ aoi_feature_edit.map_init = function (map, bounds) {
         featureSelectUrl: '/geoq/api/workcell-image/{{id}}'
     });
 
-
+    imageviewer.init({
+        finishImageUrl: '/geoq/api/workcell-image/{{id}}/examined'
+    });
 
     //Resize the map
     aoi_feature_edit.mapResize();
@@ -1225,8 +1307,10 @@ aoi_feature_edit.addMapControlButtons = function (map) {
         'doToggle': false,  // bool
         'toggleStatus': false  // bool
     };
-    var titleInfoButton = new L.Control.Button(titleInfoOptions).addTo(map);
 
+    if ($.inArray("Title",aoi_feature_edit.hidden_tools) == -1) {
+        var titleInfoButton = new L.Control.Button(titleInfoOptions).addTo(map);
+    }
 
     //TODO: Fix to make controls positioning more robust (and force to move to top when created)
     // Quick work-around for moving header to top of the page
@@ -1476,7 +1560,7 @@ aoi_feature_edit.buildDropdownMenu = function() {
                 .appendTo($ull);
             $("<a>")
                 .appendTo($li)
-                .text("Insufficient Imagery")
+                .text("Set to Awaiting Imagery")
                 .click(function () {
                     aoi_feature_edit.complete_button_onClick(aoi_feature_edit.awaitingimagery_status_url);
                 });
@@ -1485,25 +1569,25 @@ aoi_feature_edit.buildDropdownMenu = function() {
                 .appendTo($ull);
             $("<a>")
                 .appendTo($li)
-                .text("Ready for Analysis")
+                .text("Set to Awaiting Analysis")
                 .click(function () {
                     aoi_feature_edit.complete_button_onClick(aoi_feature_edit.awaitinganalysis_status_url);
                 });
-        } else if (opt=='unassigned'){
+        } else if (opt=='inwork') {
             $li = $("<li>")
                 .appendTo($ull);
             $("<a>")
                 .appendTo($li)
-                .text("Return for further analysis")
-                .click(function(){
-                    aoi_feature_edit.complete_button_onClick(aoi_feature_edit.unassigned_status_url);
+                .text("Set to In Work")
+                .click(function () {
+                    aoi_feature_edit.complete_button_onClick(aoi_feature_edit.inwork_status_url);
                 });
         } else if (opt=='completed'){
             $li = $("<li>")
                 .appendTo($ull);
             $("<a>")
                 .appendTo($li)
-                .text("Certify as complete")
+                .text("Set to Complete")
                 .click(function(){
                     aoi_feature_edit.complete_button_onClick(aoi_feature_edit.completed_status_url);
                 });

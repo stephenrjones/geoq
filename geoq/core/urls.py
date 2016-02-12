@@ -107,11 +107,15 @@ urlpatterns = patterns('',
 
     url(r'^features/delete/(?P<pk>\d+)/?$', login_required( feature_delete ), name='feature-delete'),
 
+    # Report Pages
+    url(r'^reports/work/(?P<job_pk>\d+)/?$', login_required(WorkSummaryView.as_view()), name='work-summary'),
+
     # OTHER URLS
     url(r'^edit/?$', TemplateView.as_view(template_name='core/edit.html'), name='edit'),
     url(r'^help/?$', display_help, name='help_page'),
     url(r'^api/jobs/(?P<job_pk>\d+)/users/?$', list_users, name='list_users'),
     url(r'^api/jobs/(?P<job_pk>\d+)/groups/?$', list_groups, name='list_groups'),
+    url(r'^api/group/(?P<group_pk>\d+)/users/?$', list_group_users, name='list_group_users'),
     url(r'^api/geo/usng/?$', 'core.views.usng', name='usng'),
     url(r'^api/geo/mgrs/?$', 'core.views.mgrs', name='mgrs'),
     url(r'^api/test/image_footprints/?$', 'core.views.image_footprints', name='image_footprints'),
@@ -136,5 +140,6 @@ urlpatterns = patterns('',
         'core.views.prioritize_cells', name='batch-prioritize-cells'),
     url(r'^api/workcell-image/(?P<id>\w+)?$', 'core.views.create_workcell_image',
         name='create-workcell-image'),
-
+    url(r'^api/workcell-image/(?P<id>\w+)/examined/?$', 'core.views.workcell_image_examined',
+        name='workcell-image-examined'),
 )
