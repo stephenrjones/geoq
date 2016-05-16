@@ -18,7 +18,7 @@
     </li>
     {% endif %}
     {% if archived %}
-    <li class="{% if active_pane == "archived" %} active {% endif %}">
+    <li class="{% if active_pane == "archived" %} active {% endifl %}">
         <a href="#archived" data-toggle="tab">Archived {{list_title}}</a>
     </li>
     {% endif %}
@@ -52,6 +52,7 @@
         {% include "core/_object_list.html" with object_list=private %}
     </div>
 
+//The following code creates the "readmore" functionality for job descriptions
 <script type="text/javascript">
    //This is for the total jobs page
    $( document ).ready(function() {
