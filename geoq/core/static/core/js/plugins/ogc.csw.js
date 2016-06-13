@@ -16,10 +16,9 @@ ogc_csw.validated_server;
 ogc_csw.current_layer_list = [];
 
 ogc_csw.schema = {
-    'imageId': { key: 'identifier', default: 'unknown'},
-    'layerId': { key: 'title', default: 'unknown'},
+    'image_id': { key: 'identifier', default: 'unknown'},
     'wms': { key: 'references', default: null },
-    'ObservationDate': { key: null, default: moment().format('YYYYMMDD')},
+    'ObservationDate': { key: null, default: moment().format('YYYY-MM-DD')},
     'maxCloudCoverPercentageRate': { key: null, default: 1},
     'platformCode': { key: null, default: 'abc123'},
     'sensor': {key: null, default: 'def456'},
@@ -80,7 +79,7 @@ ogc_csw.createWMSLayerFromRecord = function(record) {
     var newlayer = {};
     try {
         var parser = document.createElement('a');
-        parser.href = $(record).find('references').text();
+        parser.href = ogc_csw.getRecordValue(record, 'wms');
         var search = parser.search.substring(1);
         var parts = JSON.parse('{"' + decodeURI(search).replace(/"/g, '\\"').replace(/&amp;/g, '","').replace(/=/g,'":"') + '"}');
         if (parts.service === 'WMS') {
@@ -120,9 +119,8 @@ ogc_csw.parseCSWRecord = function(record) {
         oRecord.uc = $box.find('UpperCorner').text();
         oRecord.lc = $box.find('LowerCorner').text();
 
-        oRecord.options.imageId = ogc_csw.getRecordValue(record, 'imageId');
+        oRecord.options.image_id = ogc_csw.getRecordValue(record, 'image_id');
         oRecord.options.wms = ogc_csw.getRecordValue(record, 'wms');
-        oRecord.options.layerId = ogc_csw.getRecordValue(record, 'layerId');
         oRecord.options.ObservationDate = ogc_csw.getRecordValue(record, 'ObservationDate');
         oRecord.options.maxCloudCoverPercentageRate = ogc_csw.getRecordValue(record, 'maxCloudCoverPercentageRate');
         oRecord.options.platformCode = ogc_csw.getRecordValue(record, 'platformCode');
@@ -136,26 +134,68 @@ ogc_csw.parseCSWRecord = function(record) {
     return oRecord;
 };
 
-ogc_csw.createOutlineBoxFromRecord = function(record, style) {
+ogc_csw.createRectangleFromBoundingBox = function(box, style) {
     var outlineLayer = {};
     try {
-        outlineLayer = L.rectangle([record.lc.split(' ').map(Number),record.uc.split(' ').map(Number)],
+        outlineLayer = L.rectangle([box.lc.split(' ').map(Number),box.uc.split(' ').map(Number)],
             style);
-        $.extend(outlineLayer.options,record.options);
-
-        var layerName = outlineLayer.layerName;
-        var func = 'footprints.removeCSWOutline("' + outlineLayer.options.imageId + '")';
-        var func2 = 'footprints.replaceCSWOutlineWithLayer("' + outlineLayer.options.imageId + '")';
-        var html = "<p>Name: " + layerName + "<br/><a href=\'#\' onclick=\'" + func + "\'>Remove Outline</a><br/>" +
-            "<a href=\'#\' onclick=\'" + func2 + "\'>Replace with WMS</a>";
-
-
-        outlineLayer.bindPopup(html);
+        $.extend(outlineLayer.options,box.options);
     } catch (e) {
         console.error(e);
     }
 
     return outlineLayer;
+};
+
+ogc_csw.createPolygonFromCoordinates = function(coordinates, style) {
+    // create a polygon from a space-delimited list of x y (lon lat) coordinates
+    // e.g. "135.75 34.75 136.82 34.75 136.86 33.57 135.75 33.57"
+    var outlineLayer  = {};
+    try {
+        var coordArray = coordinates.split(' ');
+        var latlonArray = [];
+
+        for (var i = 0; i < coordArray.length; i+=2 ) {
+            var latlng = L.latLng(coordArray[i+1],coordArray[i]);
+            latlonArray.push(latlng);
+        }
+
+        outlineLayer = L.polygon(latlonArray, style);
+    } catch (e) {
+        console.error(e);
+    }
+
+    return outlineLayer;
+};
+
+ogc_csw.createPolygonFromGeometry = function(geometry, style) {
+    // create a polygon from a geometry with a rings array
+    var outlineLayer = {};
+    try {
+        if (geometry.rings) {
+            var latlonArray = [];
+            var ringArray = geometry.rings[0];
+            for (var i = 0; i < ringArray.length; i++) {
+                var latlng = L.latLng(ringArray[i][1],ringArray[i][0]);
+                latlonArray.push(latlng);
+            }
+            outlineLayer = L.polygon(latlonArray, style);
+        }
+    } catch (e) {
+        console.error(e);
+    }
+
+    return outlineLayer;
+};
+
+ogc_csw.createLayerPopup = function(name,options) {
+    var layerName = name;
+    var func = 'footprints.removeCSWOutline("' + options.image_id + '")';
+    var func2 = 'footprints.replaceCSWOutlineWithLayer("' + options.image_id + '")';
+    var html = "<p>Name: " + layerName + "<br/><a href=\'#\' onclick=\'" + func + "\'>Remove Outline</a><br/>" +
+        "<a href=\'#\' onclick=\'" + func2 + "\'>Replace with WMS</a>";
+
+    return html;
 };
 
 ogc_csw.init({
