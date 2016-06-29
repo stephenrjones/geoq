@@ -27,11 +27,35 @@ footprints.$error_div = null;
 
 footprints.outline_layer_group = null;
 footprints.image_layer_group = null;
-footprints.border_layer_group = null;
+footprints.rejected_layer_group = null;
 
-footprints.defaultFootprintStyle = {color: 'red', weight: 1};
-footprints.savedFootprintStyle = {color: 'blue', weight: 1};
+footprints.defaultFootprintStyle = {color: 'blue', weight: 1};
+footprints.savedFootprintStyle = {color: 'green', weight: 1};
+footprints.rejectedFootprintStyle = {color: 'red', weight: 1};
 footprints.selectedFootprintStyle = {color: 'yellow', weight: 1};
+
+footprints.selectStyle = function(status) {
+    switch(status) {
+        case 'Accepted':
+            return footprints.savedFootprintStyle;
+        case 'RejectedQuality':
+            return footprints.rejectedFootprintStyle;
+        case 'Selected':
+            return footprints.selectedFootprintStyle;
+        default:
+            return footprints.defaultFootprintStyle;
+
+    }
+};
+
+footprints.getLayerGroup = function(status) {
+    switch(status) {
+        case 'RejectedQuality':
+            return footprints.rejected_layer_group;
+        default:
+            return footprints.outline_layer_group;
+    }
+};
 
 footprints.schema = [
     {name: 'image_id', title: 'Id', id: true, cswid: 'identifier', show: 'small-table'},
@@ -50,6 +74,7 @@ footprints.schema = [
         sizeMarker: true
     },
     {name: 'status', title: 'Status', filter: 'options'},
+    {name: 'wmsUrl', title: "WMS Url"},
     {
         name: 'ObservationDate',
         title: 'Observe Date',
@@ -127,9 +152,13 @@ footprints.init = function (options) {
     // Set up layers for overlays
     if (footprints.map) {
         footprints.outline_layer_group = L.layerGroup();
-        footprints.outline_layer_group.lastHighlight = undefined;
+        footprints.outline_layer_group.lastHighlight = {'id': undefined, 'status': undefined};
         footprints.outline_layer_group.addTo(footprints.map);
+        footprints.rejected_layer_group = L.layerGroup();
     }
+
+    // finally add any layers that have already been vetted
+    footprints.addInitialImages();
 
 };
 
@@ -196,6 +225,41 @@ footprints.colorBlendFromAmountRange = function (color_start, color_end, amount,
     var rgb = maths.decimalToHex(n_r) + maths.decimalToHex(n_g) + maths.decimalToHex(n_b);
 
     return "#" + rgb;
+};
+
+footprints.addInitialImages = function () {
+    _.each(aoi_feature_edit.workcell_images, function(data_row){
+        var layer_id = data_row.sensor;
+        var geo_json = JSON.parse(data_row.img_geom);
+        var rings = [];
+        _.each(geo_json.coordinates[0], function(point){
+            rings.push(point);
+        });
+
+        //Convert the json output from saved images into the format the list is expecting
+        var data = {
+            options:{
+                id: data_row.image_id,
+                image_id: data_row.image_id,
+                platformCode: data_row.platform, //TODO: Was this saved?
+                image_sensor: data_row.sensor,
+                maxCloudCoverPercentageRate : data_row.cloud_cover,
+                ObservationDate: data_row.acq_date,
+                value: data_row.nef_name,
+                area: data_row.area,
+                geometry: { rings: [rings]},
+                status: data_row.status,
+                wmsUrl: data_row.wmsUrl
+            }
+        };
+
+        var layer_name = "Layer";
+        if (footprints.layerNames && footprints.layerNames.length && footprints.layerNames.length >= layer_id) {
+            layer_name = footprints.layerNames[layer_id];
+        }
+        footprints.newFeaturesArrived({features:[data]}, "[initial]", layer_id, layer_name);
+    });
+
 };
 
 footprints.polyToLayer = function (feature) {
@@ -396,7 +460,7 @@ footprints.updateFootprintDataFromCSWServer = function () {
         };
         var callback = function (xml,lang) {
             var $xml = $(xml);
-            var data = $xml.find('Record') || [];
+            var data = $xml.filterNode('csw:Record') || [];
             footprints.newCSWFeaturesArrived(data);
         };
         //If there are any WHERE clauses, add those in
@@ -475,7 +539,7 @@ footprints.newFeaturesArrived = function (data, url, layer_id, layer_name) {
                 var feature = features[i];
                 for (var j = 0; j < footprints.features.length; j++) {
                     if (feature.options[field_id]) {
-                        if (feature.options[field_id] == footprints.features[j].options[field_id]) {
+                        if (feature.options[field_id] == footprints.features[j][field_id]) {
                             found = true;
                             break;
                         }
@@ -499,19 +563,26 @@ footprints.newFeaturesArrived = function (data, url, layer_id, layer_name) {
 
                 for (var i = 0; i <  features.length; i++) {
                     var record = features[i];
+                    var style = footprints.selectStyle(record.options.status);
 
                     if (record.uc && record.lc) {
                         // this is a BoundingBox
-                        wms = ogc_csw.createRectangleFromBoundingBox(record, footprints.savedFootprintStyle);
+                        wms = ogc_csw.createRectangleFromBoundingBox(record, style);
                     } else if (record.options.geometry) {
-                        wms = ogc_csw.createPolygonFromGeometry(record.options.geometry);
+                        wms = ogc_csw.createPolygonFromGeometry(record.options.geometry, record.options, style);
                     } else {
                         console.error("No coordinates found. Skipping this layer");
                         break;
                     }
-                    wms.bindPopup(ogc_csw.createLayerPopup(record.layerName, record.options));
+                    wms.bindPopup(ogc_csw.createLayerPopup(record.options.image_id, record.options));
 
-                    footprints.outline_layer_group.addLayer(wms);
+                    if (style == footprints.rejectedFootprintStyle) {
+                        footprints.rejected_layer_group.addLayer(wms);
+                    }
+                    else {
+                        footprints.outline_layer_group.addLayer(wms);
+                    }
+
 
                     footprints.features.push(feature.options);
                     count_added++;
@@ -541,10 +612,6 @@ footprints.newCSWFeaturesArrived = function (items) {
 
     var count_added = 0;
     if (items.length > 0) {
-        if (footprints.border_layer_group == null) {
-            footprints.border_layer_group = L.layerGroup();
-        }
-
         _.each(items, function(layer) {
             var found = false;
             var record = ogc_csw.parseCSWRecord(layer);
@@ -566,7 +633,7 @@ footprints.newCSWFeaturesArrived = function (items) {
                     // this is a BoundingBox
                     wms = ogc_csw.createRectangleFromBoundingBox(record, footprints.defaultFootprintStyle);
                 } else if (record.rings) {
-                    wms = ogc_csw.createPolygonFromCoordinates(record);
+                    wms = ogc_csw.createPolygonFromCoordinates(record, footprints.defaultFootprintStyle);
                 } else {
                     console.error("No coordinates found. Skipping this layer");
                     return;
@@ -602,15 +669,15 @@ footprints.newCSWFeaturesArrived = function (items) {
         footprints.userMessage(count_added + ' new ' + footprints.title + 's added', 'yellow');
     }
 };
-footprints.removeCSWOutline = function (identifier) {
-    _.each(footprints.outline_layer_group.getLayers(), function(layer) {
+footprints.removeCSWOutline = function (identifier,status) {
+    _.each(footprints.getLayerGroup(status).getLayers(), function(layer) {
         if (layer.options.image_id === identifier) {
             // see if there's an image layer as well. If so, remove it
             if (layer.image_layer) {
                 footprints.image_layer_group.removeLayer(layer.image_layer);
             }
 
-            footprints.outline_layer_group.removeLayer(layer);
+            footprints.getLayerGroup(status).removeLayer(layer);
 
             // now remove from table
             var data = footprints.$grid.pqGrid("option","dataModel");
@@ -632,18 +699,22 @@ footprints.saveInspectedImage = function (identifier, accepted) {
         if (layer.options.image_id === identifier) {
             // find the correct row in the table, then click the save radio button
             var data = footprints.$grid.pqGrid("option", "dataModel");
-            for (var index = 0; index < data.data.length; index++) {
-                if (data.data[index]['image_id'] == identifier) {
-                    // index is the row. if accepted is true, we want to keep it. Otherwise reject
-                    if (accepted) {
-                        $('#r1-'+index).click();
-                    } else {
-                        $('#r3-'+index).click();
-
-                        // since we're not keeping this one, go ahead and clear from map
-                        footprints.removeCSWOutline(identifier);
+            if (data.data && data.data.length > 0) {
+                for (var index = 0; index < data.data.length; index++) {
+                    if (data.data[index]['image_id'] == identifier) {
+                        // index is the row. if accepted is true, we want to keep it. Otherwise reject
+                        if (accepted) {
+                            $('#r1-'+index).click();
+                        } else {
+                            $('#r3-'+index).click();
+                        }
                     }
                 }
+            }
+            // remove outline
+            // since we're not keeping this one, go ahead and clear from map
+            if (! accepted) {
+                footprints.removeCSWOutline(identifier);
             }
         }
     })
@@ -661,7 +732,7 @@ footprints.replaceCSWOutlineWithLayer = function (identifier) {
                 layer.bindPopup(html);
 
                 var parser = document.createElement('a');
-                parser.href = layer.options.wms;
+                parser.href = layer.options.wmsUrl;
                 var search = parser.search.substring(1);
                 var parts = JSON.parse('{"' + decodeURI(search).replace(/"/g, '\\"').replace(/&amp;/g, '&').replace(/&/g, '","').replace(/=/g,'":"') + '"}');
                 if (parts.service === 'WMS') {
@@ -673,7 +744,7 @@ footprints.replaceCSWOutlineWithLayer = function (identifier) {
                     });
                     if (footprints.image_layer_group == null) {
                         footprints.image_layer_group = L.layerGroup();
-                        footprints.image_layer_group.lastHighlight = undefined;
+                        footprints.image_layer_group.lastHighlight = {'id': undefined, 'status': undefined};
                         footprints.image_layer_group.addTo(footprints.map);
                     }
                     footprints.image_layer_group.addLayer(newlayer);
@@ -936,6 +1007,13 @@ footprints.updateFootprintFilteredResults = function (options) {
 
     var workcellGeojson = footprints.workcellGeojson;
 
+    // check whether to show rejected outlines or not
+    if (footprints.filters.previously_rejected && !footprints.map.hasLayer(footprints.rejected_layer_group)) {
+        footprints.map.addLayer(footprints.rejected_layer_group);
+    } else if (!footprints.filters.previously_rejected && footprints.map.hasLayer(footprints.rejected_layer_group)) {
+        footprints.map.removeLayer(footprints.rejected_layer_group);
+    }
+
     //Check every feature against filters, then exclude features that don't match
     for (var i = 0; i < footprints.features.length; i++) {
         var matched = true;
@@ -961,7 +1039,7 @@ footprints.updateFootprintFilteredResults = function (options) {
                 var filterSetting = footprints.filters[fieldToCheck];
                 var val = feature[fieldToCheck] || feature.options[fieldToCheck];
 
-                if (typeof val != "undefined") {
+                if (typeof val != "unknown") {
                     //Check all possible options and see if the feature has that setting
                     if (schema_item.filter == 'options') {
                         var option_found = false;
@@ -1141,7 +1219,7 @@ footprints.addResultTable = function ($holder) {
                     var c3 = (data.status && data.status == 'RejectedQuality') ? 'checked' : '';
 
                     var bg = '<input class="accept" id="r1-' + id + '" type="radio" name="acceptance-' + id + '" '+c1+' value="Accepted"/><label for="r1-' + id + '"></label>';
-                    bg += '<input class="unsure" id="r2-' + id + '" type="radio" name="acceptance-' + id + '" '+c2+' value="NotEvaluated" checked="checked"/>';
+                    bg += '<input class="unsure" id="r2-' + id + '" type="radio" name="acceptance-' + id + '" '+c2+' value="NotEvaluated" />';
                     bg += '<input class="reject" id="r3-' + id + '" type="radio" name="acceptance-' + id + '" '+c3+' value="RejectedQuality"/><label for="r3-' + id + '"></label>';
 
                     return bg;
@@ -1168,7 +1246,7 @@ footprints.addResultTable = function ($holder) {
                 var image_id = data_row.image_id;
 
                 var inputs = {
-                    id: image_id.replace(/:/g, "_"),
+                    id: encodeURIComponent(image_id),
                     evaluation: val
                 };
 
@@ -1195,10 +1273,19 @@ footprints.addResultTable = function ($holder) {
                     cloud_cover: data_row.maxCloudCoverPercentageRate,
                     acq_date: data_row.ObservationDate,
                     img_geom: JSON.stringify(geometry),
+                    wmsUrl: data_row.wmsUrl,
                     area: 1,
                     status: val,
                     workcell: aoi_feature_edit.aoi_id
                 };
+
+                // find that layer in footprints.features and update
+                for (var i = 0; i < footprints.features.length; i++) {
+                    if (data_row.image_id == footprints.features[i].image_id) {
+                        footprints.features[i].status = val;
+                        break;
+                    }
+                }
 
                 console.log(url);
                 $.ajax({
@@ -1216,26 +1303,26 @@ footprints.addResultTable = function ($holder) {
         };
         obj.rowClick = function( evt, ui ) {
             var imageid = ui.dataModel.data[ui.rowIndx].image_id;
-            var last_index = footprints.outline_layer_group.lastHighlight;
-            var outlinelayers = footprints.outline_layer_group.getLayers();
+            var image_status = ui.dataModel.data[ui.rowIndx].status;
 
             // change back previous selection if necessary
-            if ( footprints.outline_layer_group.lastHighlight ) {
-                var player = outlinelayers.filter(function(e) {return e.options.image_id == footprints.outline_layer_group.lastHighlight})[0];
+            if ( footprints.outline_layer_group.lastHighlight.id ) {
+                var pastlayers = footprints.getLayerGroup(footprints.outline_layer_group.lastHighlight.status).getLayers();
+                var player = pastlayers.filter(function(e) {return e.options.image_id == footprints.outline_layer_group.lastHighlight.id})[0];
                 if (player) {
-                    player.setStyle(footprints.defaultFootprintStyle);
+                    player.setStyle(footprints.selectStyle(player.options.status));
                     player.bringToBack();
                 }
             }
 
             // change the color of the selected image
-            var layer = outlinelayers.filter(function(e) { return e.options.image_id == imageid; })[0];
+            var newlayers = footprints.getLayerGroup(image_status).getLayers();
+            var layer = newlayers.filter(function(e) { return e.options.image_id == imageid; })[0];
             if (layer) {
-                layer.setStyle(footprints.selectedFootprintStyle);
+                layer.setStyle(footprints.selectStyle('Selected'));
                 layer.bringToFront();
+                footprints.outline_layer_group.lastHighlight = {'id': imageid, 'status': layer.options.status};
             }
-
-            footprints.outline_layer_group.lastHighlight = imageid;
         };
     }
     obj.colModel = obj.colModel.concat(columns);
