@@ -71,7 +71,7 @@ footprints.schema = [
     {name: 'image_id', title: 'Id', id: true, cswid: 'identifier'},
     {name: 'layerName', title: 'Name', cswid: 'layerName', show: 'small-table' },
     {name: 'format', title: 'Format', cswid: 'format', show: 'small-table'},
-    {name: 'platformCode', title: 'Pltfrm', filter: 'options', cswid: 'creator', show: 'small-table'},
+    {name: 'platformCode', title: 'Source', filter: 'options', cswid: 'creator', show: 'small-table'},
     //TODO: Show image name as mouseover or small text field?
     {
         name: 'maxCloudCoverPercentageRate',
@@ -98,8 +98,7 @@ footprints.schema = [
         showSizeMultiplier: 2,
         initialDateRange: 365,
         colorMarker: true
-    },
-    {name: 'keyword', title: 'Keywords', filter: 'textbox', cswid: 'keyword'}
+    }
 ];
 
 footprints.url_template = 'http://server.com/arcgis/rest/services/ImageEvents/MapServer/req_{{layer}}/query?&geometry={{bounds}}&geometryType=esriGeometryEnvelope&spatialRel=esriSpatialRelIntersects&outFields=*&outSR=4326&f=json';
@@ -513,7 +512,8 @@ footprints.updateFootprintDataFromCSWServer = function () {
     // check if there are any query rules
     var qb = $('#builder').queryBuilder('getRules');
 
-    ogc_csw.getRecordsPost(params, query_rules, callback);
+    // ogc_csw.getRecordsPost(params, query_rules, callback);
+    ogc_csw.getRecordsGet(params, query_rules, callback);
 
 };
 
@@ -1077,7 +1077,6 @@ footprints.updateFootprintFilteredResults = function (options) {
     for (var i = 0; i < footprints.features.length; i++) {
         var matched = true;
         var feature = footprints.features[i];
-        console.log(feature);
         //Check first if geometry is in bounds (if that's being checked for)
         if (feature.geometry && footprints.filters.in_bounds) {
             if (!footprints.isFeatureInPolygon(feature, workcellGeojson)) {
@@ -1096,9 +1095,9 @@ footprints.updateFootprintFilteredResults = function (options) {
             if (schema_item.filter && matched) {
                 var fieldToCheck = schema_item.name;
                 var filterSetting = footprints.filters[fieldToCheck];
-                var val = feature[fieldToCheck] || feature.options[fieldToCheck];
+                var val = feature[fieldToCheck];
 
-                if (typeof val != "unknown") {
+                if (val) {
                     //Check all possible options and see if the feature has that setting
                     if (schema_item.filter == 'options') {
                         var option_found = false;
@@ -1156,23 +1155,25 @@ footprints.updateFootprintFilteredResults = function (options) {
         //Only store in the array items mentioned in the schema
         _.each(footprints.schema, function (schema_item) {
             var fieldToCheck = schema_item.name;
-            var val = feature[fieldToCheck] || feature.options[fieldToCheck];
+            var val = feature[fieldToCheck];
 
-            if ((schema_item.type && schema_item.type == 'date') || (schema_item.filter && schema_item.filter == 'date-range')) {
-                var date_format = null;
-                if (schema_item.transform == 'day') {
-                    if (val.indexOf('-') < 0) {
-                        val = val.substr(0, 4) + '-' + val.substr(4, 2) + '-' + val.substr(6, 2);
+            if (val) {
+                if ((schema_item.type && schema_item.type == 'date') || (schema_item.filter && schema_item.filter == 'date-range')) {
+                    var date_format = null;
+                    if (schema_item.transform == 'day') {
+                        if (val.indexOf('-') < 0) {
+                            val = val.substr(0, 4) + '-' + val.substr(4, 2) + '-' + val.substr(6, 2);
+                        }
+                        date_format = "YYYY-MM-DD";
                     }
-                    date_format = "YYYY-MM-DD";
+                    var date_val = moment(val, date_format);
+                    if (date_val && date_val.isValid && date_val.isValid()) {
+                        val = date_val.format('YYYY-MM-DD');
+                    }
                 }
-                var date_val = moment(val, date_format);
-                if (date_val && date_val.isValid && date_val.isValid()) {
-                    val = date_val.format('YYYY-MM-DD');
-                }
-            }
 
-            item[fieldToCheck] = val;
+                item[fieldToCheck] = val;
+            }
         });
 
         //Pull out the geometry
@@ -1237,7 +1238,7 @@ footprints.addToResultTable = function (flattenedList) {
 
         var bg = '<input class="accept" id="r1-' + flattenedList[i].image_id + '" type="radio" name="acceptance-' + flattenedList[i].image_id + '" ' + c1 + ' value="Accepted" onclick="footprints.updateValueFromRadio(&quot;'+flattenedList[i].image_id + '&quot;, 1)"/><label for="r1-' + flattenedList[i].image_id + '"></label>';
         bg += '<input class="unsure" id="r2-' + flattenedList[i].image_id + '" type="radio" name="acceptance-' + flattenedList[i].image_id + '" ' + c2 + ' value="NotEvaluated" onclick="footprints.updateValueFromRadio(&quot;'+ flattenedList[i].image_id + '&quot;, 0)"/>';
-        bg += '<input class="reject" id="r3-' + flattenedList[i].image_id + '" type="radio" name="acceptance-' + flattenedList[i].image_id + '" ' + c3 + ' value="RejectedQuality"/><label for="r3-' + flattenedList[i].image_id + '" onclick="&quot;updateValueFromRadio('+ flattenedList[i].image_id + '&quot;, -1)"></label>';
+        bg += '<input class="reject" id="r3-' + flattenedList[i].image_id + '" type="radio" name="acceptance-' + flattenedList[i].image_id + '" ' + c3 + ' value="RejectedQuality" onclick="footprints.updateValueFromRadio(&quot;'+ flattenedList[i].image_id + '&quot;, -1)"/><label for="r3-' + flattenedList[i].image_id + '"></label>';
 
 
         var $tr = $('<tr>').on('click', function() {
@@ -1276,12 +1277,13 @@ footprints.addToResultTable = function (flattenedList) {
 
 footprints.updateValueFromRadio = function(id, value) {
     var val, data_row;
+
     if (value < 0) {
         val = "RejectedQuality";
     } else if (value > 0) {
         val = "Accepted";
     } else {
-        val = ("NotEvlauated");
+        val = "NotEvaluated";
     }
 
     for (var i = 0; i < footprints.dataInTable.length; i++) {
@@ -1292,6 +1294,7 @@ footprints.updateValueFromRadio = function(id, value) {
     }
 
     var image_id = data_row.image_id;
+
     var inputs = {
         id: encodeURIComponent(image_id),
         evaluation: val
@@ -1333,7 +1336,6 @@ footprints.updateValueFromRadio = function(id, value) {
             break;
         }
     }
-    console.log(url);
     $.ajax({
         type: "POST",
         url: url,
@@ -1450,179 +1452,12 @@ footprints.addResultTable = function ($holder) {
 
     // and listen for page changes for us to get updated results
     .bind('pagerChange pageMoved', function(e,c) {
-        console.log("moved to page " + c.page);
+        //console.log("moved to page " + c.page);
     });
 
     $("#imagelayer-list").trigger('update');
     //Have to call this function
     $('#imagelayer-list').trigger('pageAndSize');
-
-    /*
-    //Set up table
-    var width = 300;
-    if (footprints.featureSelectFunction || footprints.featureSelectUrl) {
-        width -= 40;
-    }
-    var obj = {
-        width: width, height: 180, title: "Matched " + footprints.title + "s", editable: false,
-        flexHeight: false, topVisible: false, bottomVisible: false, flexWidth: false, numberCell: false
-    };
-
-    //Pull out just the columns that will be shown
-    var columns = [];
-    var column_count = 0;
-    _.each(footprints.schema, function (schema_item) {
-        if (schema_item.show && schema_item.show == 'small-table') {
-            columns.push({
-                title: schema_item.title || schema_item.name,
-                dataType: 'string',
-                dataIndx: schema_item.name,
-                showSizeMultiplier: schema_item.showSizeMultiplier
-            });
-            column_count += schema_item.showSizeMultiplier || 1;
-        }
-    });
-    //Shrink them to fit width, apply showSizeMultiplier
-    _.each(columns, function (column) {
-        column.width = parseInt((width / column_count) - 10);
-        if (column.showSizeMultiplier) column.width *= column.showSizeMultiplier;
-    });
-
-    //If featureSelectFunction exists as a function, have a checkbox
-    obj.colModel = [];
-    if (footprints.featureSelectUrl || footprints.featureSelectFunction) {
-        obj.colModel = [
-            {
-                title: "Accept",
-                width: 10,
-                dataType: "string",
-                dataIndx: columns.length + 2,
-                editable: false,
-                sortable: false,
-                align: "center",
-                resizable: false,
-                render: function (ui) {
-                    var id = ui.rowIndx;
-                    var data = ui.data[id];
-
-                    var c1 = (data.status && data.status == 'Accepted') ? 'checked' : '';
-                    var c2 = (!data.status || (data.status && data.status == 'NotEvaluated')) ? 'checked' : '';
-                    var c3 = (data.status && data.status == 'RejectedQuality') ? 'checked' : '';
-
-                    var bg = '<input class="accept" id="r1-' + id + '" type="radio" name="acceptance-' + id + '" '+c1+' value="Accepted"/><label for="r1-' + id + '"></label>';
-                    bg += '<input class="unsure" id="r2-' + id + '" type="radio" name="acceptance-' + id + '" '+c2+' value="NotEvaluated" />';
-                    bg += '<input class="reject" id="r3-' + id + '" type="radio" name="acceptance-' + id + '" '+c3+' value="RejectedQuality"/><label for="r3-' + id + '"></label>';
-
-                    return bg;
-                }
-            }];
-        obj.cellClick = function (evt, ui) {
-            var clicked_on = evt.srcElement;
-            if (!clicked_on) {
-                //Firefox
-                clicked_on = evt.originalEvent.target ? evt.originalEvent.target : false;
-                if (!clicked_on) {
-                    throw "footprints error - Could not determine what was clicked on using this browser";
-                }
-            }
-
-            if (clicked_on.nodeName != "INPUT") {
-                return; //Fires for row and for cell, nly want for cell
-            }
-            var $target = $("input:radio[name ='acceptance-" + ui.rowIndx + "']:checked");
-
-            var val = $target.val();
-            if (val && footprints.featureSelectUrl) {
-                var data_row = ui.dataModel.data[ui.rowIndx];
-                var image_id = data_row.image_id;
-                var inputs = {
-                    id: encodeURIComponent(image_id),
-                    evaluation: val
-                };
-
-                //Apply all the above inputs to the url template to build out the final url
-                var proxy = leaflet_helper.proxy_path || '/geoq/proxy/';
-                var url_template = _.template(footprints.featureSelectUrl);
-                var url = url_template(inputs);
-
-                if (_.str.startsWith(url, 'http')) url = proxy + url;
-
-                var geometry = {
-                    "type": "Polygon",
-                    "coordinates": [[]]
-                };
-                _.each(data_row.geometry.geometry.rings[0], function(point) {
-                   geometry.coordinates[0].push(point);
-                });
-
-                var data = {
-                    image_id: data_row.image_id,
-                    format: data_row.format,
-                    nef_name: data_row.value,
-                    sensor: data_row.image_sensor,
-                    platform: data_row.platformCode,
-                    cloud_cover: data_row.maxCloudCoverPercentageRate,
-                    acq_date: data_row.ObservationDate,
-                    img_geom: JSON.stringify(geometry),
-                    wmsUrl: data_row.wmsUrl,
-                    area: 1,
-                    status: val,
-                    workcell: aoi_feature_edit.aoi_id
-                };
-
-                // find that layer in footprints.features and update
-                for (var i = 0; i < footprints.features.length; i++) {
-                    if (data_row.image_id == footprints.features[i].image_id) {
-                        footprints.features[i].status = val;
-                        break;
-                    }
-                }
-                console.log(url);
-                $.ajax({
-                    type: "POST",
-                    url: url,
-                    data: data,
-                    dataType: "json",
-                    success: function (data) {
-                        console.log(data)
-                    }
-                });
-            } else if (val && footprints.featureSelectFunction) {
-                footprints.featureSelectFunction(ui, val);
-            }
-        };
-        obj.rowClick = function( evt, ui ) {
-            var imageid = ui.dataModel.data[ui.rowIndx].image_id;
-            var image_status = ui.dataModel.data[ui.rowIndx].status;
-
-            // change back previous selection if necessary
-            if ( footprints.outline_layer_group.lastHighlight.id ) {
-                var pastlayers = footprints.getLayerGroup(footprints.outline_layer_group.lastHighlight.status).getLayers();
-                var player = pastlayers.filter(function(e) {return e.options.image_id == footprints.outline_layer_group.lastHighlight.id})[0];
-                if (player) {
-                    player.setStyle(footprints.selectStyle(player.options.status));
-                    player.bringToBack();
-                }
-            }
-
-            // change the color of the selected image
-            var newlayers = footprints.getLayerGroup(image_status).getLayers();
-            var layer = newlayers.filter(function(e) { return e.options.image_id == imageid; })[0];
-            if (layer) {
-                layer.setStyle(footprints.selectStyle('Selected'));
-                layer.bringToFront();
-                footprints.outline_layer_group.lastHighlight = {'id': imageid, 'status': layer.options.status};
-            }
-        };
-    }
-    obj.colModel = obj.colModel.concat(columns);
-    obj.dataModel = {data: footprints.matched_flattened};
-
-    console.log("adding object to grid - AddResultsTable");
-
-    $grid.pqGrid(obj);
-
-    */
 
     footprints.$grid = $grid;
 };
@@ -1724,14 +1559,15 @@ footprints.addFilterTextbox = function ($holder, schema_item) {
         .attr("id","builder")
         .appendTo($holder);
 
-    var ops = ['equal', 'not_equal', 'less', 'less_or_equal', 'greater', 'greater_or_equal', 'is_null', 'is_not_null', 'begins_with'];
+    var ops = ['equal', 'not_equal', 'less', 'less_or_equal', 'greater', 'greater_or_equal', 'is_null', 'is_not_null', 'contains'];
 
     $('#builder').queryBuilder( {
 
         filters: [
             {id: 'name', field: 'dc:title', label: 'Name', type: 'string', operators: ops},
             {id: 'platform', field: 'dc:subject', label: 'Platform', type: 'string', size: 40, operators: ops},
-            {id: 'cloud', field: 'wst:CloudCover', label: 'Cloud %', type: 'integer', size: 40, operators: ops}
+            {id: 'cloud', field: 'wst:CloudCover', label: 'Cloud %', type: 'integer', size: 40, operators: ops},
+            {id: 'format', field: 'dc:format', label: 'Format', type: 'string', size: 30, operators: ops}
         ]
     });
 
