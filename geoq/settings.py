@@ -249,7 +249,7 @@ INSTALLED_APPS = [
     'geoq.proxy.apps.ProxyConfig',
     'geoq.training.apps.TrainingConfig',
     'geoq.core.apps.CoreConfig',
-    'geoq.maps.apps.MapsConfig',
+    'geoq.maps.apps.MapsConfig'
 
 ]
 

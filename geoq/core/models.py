@@ -10,7 +10,7 @@ from pytz import utc
 
 from django.contrib.auth.models import User, Group
 from django.contrib.gis.db import models
-from django.contrib.gis.geos import MultiPolygon, Polygon
+from django.contrib.gis.geos import MultiPolygon, Polygon, Point
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.urlresolvers import reverse
@@ -169,7 +169,7 @@ class Job(GeoQBase, Assignment):
     analysts = models.ManyToManyField(User, blank=True, related_name="analysts")
     teams = models.ManyToManyField(Group, blank=True, related_name="teams")
     reviewers = models.ManyToManyField(User, blank=True, related_name="reviewers")
-    progress = models.SmallIntegerField(blank=True)
+    progress = models.SmallIntegerField(blank=True,null=True)
     project = models.ForeignKey(Project, related_name="project")
 
     grid = models.CharField(max_length=5, choices=GRID_SERVICE_CHOICES, default=GRID_SERVICE_VALUES[0],
@@ -627,5 +627,38 @@ class AOITimer(models.Model):
         return self.completed_at - self.started_at > timedelta(minutes=1)
 
 
+class Responder(models.Model):
+    name = models.CharField(max_length=250)
+    contact_instructions = models.CharField(max_length=1024)
+    in_field = models.BooleanField()
+    last_seen = models.DateTimeField(null=True)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7)
+    latitude = models.DecimalField(max_digits=10, decimal_places=7)
 
+    def __unicode__(self):
+        return self.name
+
+    def geoJSON(self, as_json=True):
+        """
+        Returns geoJSON of the feature.
+        """
+        geojson = OrderedDict()
+        geojson["type"] = "Feature"
+        geojson["geometry"] = { "type": "Point", "coordinates": [self.longitude, self.latitude]}
+        geojson["properties"] = {
+            "id": self.id,
+            "name": self.name,
+            "contact_instructions": self.contact_instructions,
+            "in_field":  self.in_field,
+            "last_seen": self.last_seen
+        }
+
+        return clean_dumps(geojson) if as_json else geojson
+
+class BrowserSub(models.Model):
+    details = models.TextField()
+    user = models.ForeignKey(User, blank=False, help_text="Subscription owner")
+
+    def subscriptionDictionary(self):
+        return json.loads(self.details)
 

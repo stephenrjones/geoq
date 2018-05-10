@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 # This technical data was produced for the U. S. Government under Contract No. W15P7T-13-C-F600, and
 # is subject to the Rights in Technical Data-Noncommercial Items clause at DFARS 252.227-7013 (FEB 2012)
@@ -166,5 +167,11 @@ urlpatterns = [
             name='team-update'),
     url(r'^team/delete/(?P<pk>\d+)/?$',
         login_required(TeamDelete.as_view()),
-        name='team-delete')
+        name='team-delete'),
+
+    #RESPONDERS
+    url(r'^responders/geojson',responders_geojson, name="responders-list"),
+    url(r'^responder/update', update_responder, name='update-responder')
+    # url(r'^subscribe', save_subscription, name='save_subscription')
+
 ]
