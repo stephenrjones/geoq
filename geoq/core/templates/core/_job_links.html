@@ -53,6 +53,15 @@
                         <img src="/static/images/icons/kml_globe.png"/>
                         <span>Direct KML Link</span></a>
                 </div>
+
+                <div class="job_link_item">
+                    <a href="{% url 'atom-job' object.id %}"
+                       title="Best for use in feed readers (RSS Readers that support Atom)" target="_new">
+                        <img src="/static/images/icons/feed_icon.svg" style="height: 24px; width: 24px;" />
+                        <span>Atom Feed</span></a>
+                </div>
+
+
                 <br>
 
                 <div class="job_link_item">
