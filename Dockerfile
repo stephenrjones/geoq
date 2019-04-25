@@ -1,4 +1,4 @@
-FROM python:2.7.13
+FROM python:2.7.16
 
 # set appropriately if needed for your environment
 ARG http_proxy
