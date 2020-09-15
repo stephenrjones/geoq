@@ -16,6 +16,7 @@ leaflet_layer_control.$tree = undefined;
 leaflet_layer_control.accordion_sections = [];
 leaflet_layer_control.$feature_info = undefined;
 leaflet_layer_control.hidden_panels = [];
+leaflet_layer_control.default_ontology = "CMO";
 
 leaflet_layer_control.init = function(){
     leaflet_layer_control.$map = $("#map");
@@ -140,8 +141,6 @@ leaflet_layer_control.addRotationHelper = function($accordion) {
     $("#spinnerResetButton").click(function(evt) { leaflet_layer_control.rotateMap(0); $("#roseSpinnerInput").val(0); });
 
 };
-
-
 
 
 leaflet_layer_control.addYouTube = function ($accordion) {
@@ -675,8 +674,10 @@ leaflet_layer_control.removePythonDateTime = function(value) {
     }
     return value;
 };
-leaflet_layer_control.show_feature_info = function (feature) {
 
+leaflet_layer_control.show_feature_info = function (feature) {
+    var tree = $("#classification-tree").data("NCBOTree");
+    console.log ("Calling show_feature_info");
     var $content = leaflet_layer_control.$feature_info;
     if (!feature || !feature.properties || !$content || jQuery.isEmptyObject($content)) {
         return;
@@ -710,7 +711,20 @@ leaflet_layer_control.show_feature_info = function (feature) {
                     <div class="modal-body">\
                         <div class="container-fluid"> \
                             <div class="row"> \
-                                <div class="col" id="classification-tree"></div> \
+                                <div class="col" id="ontology-list-tree"> \
+                                    <form> \
+                                        <label for="ontoAcronym">Select an ontology:</label><br> \
+                                            <select style="width: 432px;" name="ontoAcronym" id="ontoAcronym" onchange="leaflet_layer_control.changeOntology(ontoAcronym.value)">  \
+                                            <option value="CMO" selected>China Maritime Ontology (CMO)</option>  \
+                                            <option value="DICO">Defense Intelligence Core Ontology (DICO)</option>  \
+                                            <option value="FMIE">FMI Equipment Ontology (FMIE)</option>  \
+                                            <option value="RAFO">Russian Air Force Ontology (RAFO)</option>  \
+                                        </select> \
+                                    </form> \
+                                </div> \
+                            </div> \
+                            <div class="row"> \
+                                <div class="col pre-scrollable" id="classification-tree"></div> \
                                 <div class="col" id="classification-details"></div> \
                             </div> \
                         </div> \
@@ -726,8 +740,19 @@ leaflet_layer_control.show_feature_info = function (feature) {
 
     }
     $classification.appendTo($content);
+
     //Very VERY VERY gross JS to fix a JS loading/scoping issue.
-    $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree();})</' + 'script>').appendTo(document.body)
+    //$('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("CMO");})</' + 'script>').appendTo(document.body)
+
+
+
+    try{
+       console.log("Found the tree's ontology at scope issue...");
+       $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("'+tree.options.ontology+'");})</' + 'script>').appendTo(document.body)
+    } catch{
+        console.log("Didn't find the tree's ontology at scope issue.  Using default ontology...");
+        $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("'+leaflet_layer_control.default_ontology+'");})</' + 'script>').appendTo(document.body)
+    }
 
     $.each(feature.properties, function(index, value) {
 
@@ -906,7 +931,9 @@ leaflet_layer_control.show_feature_info = function (feature) {
 
 };
 
+
 leaflet_layer_control.render_ontology_format_class = function(cls){
+    console.log("entered render_ontology_format_class using class:" + JSON.stringify(cls));
     var container = $("<span>");
     container.append($("<h2>").html("Class Details:"))
     container.append($("<p>").html("<b>prefLabel:</b> " + cls.prefLabel));
@@ -915,41 +942,67 @@ leaflet_layer_control.render_ontology_format_class = function(cls){
     container.append($("<p>").html("<b>definitions:</b> " + cls.definition.join(", ")));
     return container.html();
 }
-leaflet_layer_control.render_ontology_fancy_tree = function() {
+
+leaflet_layer_control.changeOntology = function(ontology){
+    var tree = $("#classification-tree").data("NCBOTree");
+    tree.changeOntology(ontology);
+    console.log("changeOntology.tree.ontology:"+ontology);
+}
+
+
+leaflet_layer_control.render_ontology_fancy_tree = function(custom_ontology) {
+    var tree = $("#classification-tree").data("NCBOTree");
+    try{
+        console.log("render_ontology_fancy_tree.tree.ontology:"+tree.options.ontology);
+    }
+    catch(err){
+        console.log("render_ontology_fancy_tree.tree.ontology: error. tree is undefined");
+    }
+
+    console.log("render_ontology_fancy_tree.custom_ontology:"+custom_ontology);
+
     let node = "out of scope";
     let uri = "unknown";
     let api_key = ""; // ADD API KEY HERE
-    let custom_ontology = "CMO"; // CHANGE THIS TO CHANGE ONTOLOGY
+    //let custom_ontology = "CMO"; // CHANGE THIS TO CHANGE ONTOLOGY
     let api_url = "http://ec2-3-236-58-248.compute-1.amazonaws.com:8080";
-    var widget_tree = $("#classification-tree ").NCBOTree({
+    var widget_tree = $("#classification-tree").NCBOTree({
         apikey: api_key,
         ontology: custom_ontology,
         ncboUIURL: "http://ec2-3-236-58-248.compute-1.amazonaws.com",
         ncboAPIURL: api_url,
         afterSelect: function(event, classId, prefLabel, selectedNode){
-            console.log("ClassID: " + classId);
-            console.log("Event: " + event);
-            console.log("prefLabel: ");
-
-            console.log(prefLabel)
-            console.log("data-id: " + $(prefLabel).attr("data-id"))
+            //console.log("ClassID: " + classId);
+            //console.log("Event: " + event);
+            //console.log("prefLabel: ");
+            //console.log(prefLabel);
+            //console.log("data-id: " + $(prefLabel).attr("data-id"));
+            //console.log("afterSelect.ontology:"+custom_ontology);
+            //console.log("widget_tree.ontology:"+tree.options.ontology);
             uri = $(prefLabel).attr("data-id");
-            console.log("selectedNode: " + selectedNode)
-            node = classId
+            //console.log("selectedNode: " + selectedNode);
+            node = classId;
 
             $.ajax({
-                url: api_url + "/ontologies/" + custom_ontology + "/classes/" + uri,
+                //url: api_url + "/ontologies/" + custom_ontology + "/classes/" + uri,
+                url: api_url + "/ontologies/" + tree.options.ontology + "/classes/" + uri,
                 dataType: "json",
                 data: {apikey: api_key},
                 crossDomain: true,
                 success: function (classDetails) {
-                  $("#classification-details").html(leaflet_layer_control.render_ontology_format_class(classDetails));
-                }
-              });
-
+                   console.log("got class details:"+classDetails);
+                   $("#classification-details").html(leaflet_layer_control.render_ontology_format_class(classDetails));
+                },
+                error: function(msg){
+		           console.log(msg);
+	            }
+            });
         }
-
       });
+
+
+
+
     $("#modal-submit-btn").click(function () {
         $("#classification-link").text(node);
         $("#classification-link").prop('uri',uri);
@@ -981,6 +1034,7 @@ leaflet_layer_control.featureSchemaSelect = function (feature, index) {
     }
     return settings;
 };
+
 leaflet_layer_control.show_info = function (objToShow, node) {
     var html_objects = [];
 
