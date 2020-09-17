@@ -48,7 +48,7 @@ sparkle_builder.loadOntoSearch = function() {
               matches.push(str);
             }
           });
-          cb(matches);
+          cb(matches.sort());
         };
       };
 
@@ -97,7 +97,8 @@ sparkle_builder.loadOntoSearch = function() {
                     return feature["properties"]["style"];
                   }
                 }).bindPopup(function (layer) {
-                    return L.Util.template('<b>ID:</b> {id}<br/><b>Class:</b> {name}<br/><b>Date:</b> {created_at}',layer.feature.properties);
+                    return L.Util.template('<b>ID:</b> {id}<br/><b>Class:</b> {name}<br/>' +
+                      '<b>Date:</b> {created_at}<br/><b>Analyst:</b> {analyst}',layer.feature.properties);
                 })
 
                 sparkle_builder.results_layer_group.addLayer(f);
@@ -291,11 +292,19 @@ sparkle_builder.buildAccordionPanel = function () {
                 <div id="dParents"></div> \
             </div> \
         </div> \
+        <div class="row"> \
+          <div class="col-12"> \
+            <button class="btn btn-info" type="button" onclick="sparkle_builder.clear_search()">Clear Search</button> \
+          </div> \
+        </div> \
     </div>').appendTo(sparkle_builder.$title);
 
     //Pray
     sparkle_builder.loadOntoSearch()
 
+};
+sparkle_builder.clear_search = function() {
+    sparkle_builder.results_layer_group.clearLayers();
 };
 
 geoq.sparkle_builder = sparkle_builder;
