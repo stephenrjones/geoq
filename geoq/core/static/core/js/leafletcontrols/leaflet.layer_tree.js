@@ -747,8 +747,9 @@ leaflet_layer_control.show_feature_info = function (feature) {
 
 
     try{
-       console.log("Found the tree's ontology at scope issue...");
+       console.log("Finding the tree's ontology at scope issue...");
        $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("'+tree.options.ontology+'");})</' + 'script>').appendTo(document.body)
+       console.log("Found the tree's ontology at scope issue...");
     } catch{
         console.log("Didn't find the tree's ontology at scope issue.  Using default ontology...");
         $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("'+leaflet_layer_control.default_ontology+'");})</' + 'script>').appendTo(document.body)
@@ -988,15 +989,18 @@ leaflet_layer_control.render_ontology_fancy_tree = function(custom_ontology) {
                 url: api_url + "/ontologies/" + tree.options.ontology + "/classes/" + uri,
                 dataType: "json",
                 data: {apikey: api_key},
-                crossDomain: true,
-                success: function (classDetails) {
+                //crossDomain: true,
+                crossDomain:true
+                })
+            .then(
+                function success(classDetails) {
                    console.log("got class details:"+classDetails);
                    $("#classification-details").html(leaflet_layer_control.render_ontology_format_class(classDetails));
                 },
-                error: function(msg){
-		           console.log(msg);
+                function fail(data, status){
+		           console.log(status);
 	            }
-            });
+            );
         }
       });
 
