@@ -741,17 +741,10 @@ leaflet_layer_control.show_feature_info = function (feature) {
     }
     $classification.appendTo($content);
 
-    //Very VERY VERY gross JS to fix a JS loading/scoping issue.
-    //$('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("CMO");})</' + 'script>').appendTo(document.body)
-
-
-
+    // use the default ontology until the tree has been loaded
     try{
-       console.log("Finding the tree's ontology at scope issue...");
        $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("'+tree.options.ontology+'");})</' + 'script>').appendTo(document.body)
-       console.log("Found the tree's ontology at scope issue...");
     } catch{
-        console.log("Didn't find the tree's ontology at scope issue.  Using default ontology...");
         $('<script> $( "#ontModal" ).on("shown.bs.modal", function() {leaflet_layer_control.render_ontology_fancy_tree("'+leaflet_layer_control.default_ontology+'");})</' + 'script>').appendTo(document.body)
     }
 
@@ -934,7 +927,7 @@ leaflet_layer_control.show_feature_info = function (feature) {
 
 
 leaflet_layer_control.render_ontology_format_class = function(cls){
-    console.log("entered render_ontology_format_class using class:" + JSON.stringify(cls));
+    //console.log("entered render_ontology_format_class using class:" + JSON.stringify(cls));
     var container = $("<span>");
     container.append($("<h2>").html("Class Details:"))
     container.append($("<p>").html("<b>prefLabel:</b> " + cls.prefLabel));
@@ -947,26 +940,16 @@ leaflet_layer_control.render_ontology_format_class = function(cls){
 leaflet_layer_control.changeOntology = function(ontology){
     var tree = $("#classification-tree").data("NCBOTree");
     tree.changeOntology(ontology);
-    console.log("changeOntology.tree.ontology:"+ontology);
+    //console.log("changeOntology.tree.ontology:"+ontology);
 }
 
 
 leaflet_layer_control.render_ontology_fancy_tree = function(custom_ontology) {
-    var tree = $("#classification-tree").data("NCBOTree");
-    try{
-        console.log("render_ontology_fancy_tree.tree.ontology:"+tree.options.ontology);
-    }
-    catch(err){
-        console.log("render_ontology_fancy_tree.tree.ontology: error. tree is undefined");
-    }
-
-    console.log("render_ontology_fancy_tree.custom_ontology:"+custom_ontology);
-
     let node = "out of scope";
     let uri = "unknown";
     let api_key = ""; // ADD API KEY HERE
-    //let custom_ontology = "CMO"; // CHANGE THIS TO CHANGE ONTOLOGY
     let api_url = "http://ec2-3-236-58-248.compute-1.amazonaws.com:8080";
+
     var widget_tree = $("#classification-tree").NCBOTree({
         apikey: api_key,
         ontology: custom_ontology,
@@ -975,21 +958,16 @@ leaflet_layer_control.render_ontology_fancy_tree = function(custom_ontology) {
         afterSelect: function(event, classId, prefLabel, selectedNode){
             //console.log("ClassID: " + classId);
             //console.log("Event: " + event);
-            //console.log("prefLabel: ");
-            //console.log(prefLabel);
+            //console.log("prefLabel: "+prefLabel);
             //console.log("data-id: " + $(prefLabel).attr("data-id"));
-            //console.log("afterSelect.ontology:"+custom_ontology);
-            //console.log("widget_tree.ontology:"+tree.options.ontology);
+
             uri = $(prefLabel).attr("data-id");
-            //console.log("selectedNode: " + selectedNode);
             node = classId;
 
             $.ajax({
-                //url: api_url + "/ontologies/" + custom_ontology + "/classes/" + uri,
-                url: api_url + "/ontologies/" + tree.options.ontology + "/classes/" + uri,
+                url: api_url + "/ontologies/" + this.ontology + "/classes/" + uri,
                 dataType: "json",
                 data: {apikey: api_key},
-                //crossDomain: true,
                 crossDomain:true
                 })
             .then(
@@ -997,14 +975,12 @@ leaflet_layer_control.render_ontology_fancy_tree = function(custom_ontology) {
                    console.log("got class details:"+classDetails);
                    $("#classification-details").html(leaflet_layer_control.render_ontology_format_class(classDetails));
                 },
-                function fail(data, status){
-		           console.log(status);
+                function fail(data, status, error){
+		           console.log(status+":"+error);
 	            }
             );
         }
       });
-
-
 
 
     $("#modal-submit-btn").click(function () {
